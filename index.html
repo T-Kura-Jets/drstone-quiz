@@ -270,7 +270,7 @@ function start(){
       ${[['choice','4択','タップで選ぶ'],['type','記述','キーボードで入力'],['mix','ミックス','両方まざる']].map(m=>
         `<div class="opt ${cfg.mode===m[0]?'on':''}" data-v="${m[0]}">${m[1]}<span class="sub">${m[2]}</span></div>`).join('')}
     </div>
-    <p class="hint" style="margin:12px 0 0">記述は少しくらい書き方がちがっても正解になります。ひらがなでもOK！</p>
+    <p class="hint" style="margin:12px 0 0">記述は<b>だいたい合っていれば正解</b>にします。キーワードが入っていればOK、ひらがなでも書きまちがいでも大丈夫。そのぶん、答え合わせで正しい言い方とくわしい解説が出ます。</p>
   </div>
 
   <button class="btn" onclick="begin()">クイズ スタート！ 🚀</button>
@@ -331,7 +331,7 @@ function render(){
     area.innerHTML=`<div class="inputrow">
       <input id="ti" type="text" placeholder="こたえを入力" autocomplete="off" autocapitalize="off" spellcheck="false">
       <button onclick="submitText()">こたえる</button></div>
-      <p class="hint" style="margin:10px 0 0">ヒント：${q.a.length>1?`${q.a.length}文字くらい`:'ひとこと'}で答えます</p>`;
+      <p class="hint" style="margin:10px 0 0">ヒント：${q.a.length>1?`${q.a.length}文字くらい`:'ひとこと'}で答えます。だいたい合っていれば正解にします</p>`;
     const ti=document.getElementById('ti');
     ti.onkeydown=e=>{if(e.key==='Enter')submitText();};
     setTimeout(()=>ti.focus(),80);
@@ -359,22 +359,49 @@ const norm=s=>String(s).trim().toLowerCase()
   .replace(/[ー－―‐・.,、。()（）「」『』"'”’!?！？]/g,'')
   .replace(/[ぁ-ん]/g,c=>String.fromCharCode(c.charCodeAt(0)+0x60)); // ひらがな→カタカナ
 
-function isRight(input,q){
-  const v=norm(input);
-  if(!v) return false;
-  const cands=[q.a,...(q.k||[])].map(norm).filter(Boolean);
-  if(cands.includes(v)) return true;
-  // まぎらわしい誤答をそのまま書いた場合は不正解にする
-  if((q.d||[]).map(norm).includes(v)) return false;
-  // 長めの正解は「含んでいれば」OK
-  for(const c of cands){
-    if(c.length>=3 && (v.includes(c)||c.includes(v)) && Math.abs(v.length-c.length)<=Math.max(2,c.length*0.4)) return true;
-  }
-  return false;
+// 2文字ずつに区切って、どれくらい似ているかを見る（書きまちがい対策）
+function sim(a,b){
+  if(a.length<2||b.length<2) return a===b?1:0;
+  const g=s=>{const x=new Set();for(let i=0;i<s.length-1;i++)x.add(s.slice(i,i+2));return x;};
+  const A=g(a),B=g(b);let n=0;for(const v of A)if(B.has(v))n++;
+  return n/(A.size+B.size-n);
 }
+/* 判定の種類を返す
+   exact=そのまま正解 / keyword=キーワードを含む / partial=答えの一部 / similar=書き方がおしい / null=不正解 */
+function matchKind(input,q){
+  const v=norm(input);
+  if(!v) return null;
+  const cands=[q.a,...(q.k||[])].map(norm).filter(Boolean);
+  const ds=(q.d||[]).map(norm);
+  if(cands.includes(v)) return 'exact';
+  if(ds.includes(v)) return null;                       // まぎらわしい誤答をそのまま書いた
+  for(const c of cands) if(c.length>=2&&v.includes(c)) return 'keyword';   // キーワードが入っていればOK
+  for(const d of ds)    if(d.length>=2&&v.includes(d)) return null;        // 誤答だけを書いている
+  for(const c of cands) if(v.length>=2&&c.includes(v)&&v.length/c.length>=0.5) return 'partial';
+  for(const c of cands) if(sim(v,c)>=0.7) return 'similar';
+  // 短い言葉は「1文字ちがい」まで正解にする（ただし誤答に近い場合は除く）
+  for(const c of cands){
+    if(c.length>=2&&c.length<=5&&Math.abs(v.length-c.length)<=1&&lev(v,c)<=1){
+      if(ds.some(d=>lev(v,d)<lev(v,c))) return null;
+      return 'similar';
+    }
+  }
+  return null;
+}
+// 1文字の入れかえ・追加・削除が何回で済むか（レーベンシュタイン距離）
+function lev(a,b){
+  const m=a.length,n=b.length;let prev=Array.from({length:n+1},(_,j)=>j),cur=new Array(n+1);
+  for(let i=1;i<=m;i++){cur[0]=i;
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    [prev,cur]=[cur,prev];}
+  return prev[n];
+}
+function isRight(input,q){ return matchKind(input,q)!==null; }
 
 function judge(input,q){
-  const g=game, ok=q.mode==='choice' ? norm(input)===norm(q.a) : isRight(input,q);
+  const g=game;
+  const kind=q.mode==='choice' ? (norm(input)===norm(q.a)?'exact':null) : matchKind(input,q);
+  const ok=kind!==null;
   const base={1:10,2:16,3:26}[q.l];
   let gain=ok?Math.round(base*(q.mode==='type'?1.6:1)):0;
   if(ok){
@@ -394,14 +421,21 @@ function judge(input,q){
     const bt=ti.nextElementSibling;if(bt)bt.disabled=true;}
 
   const last=g.i===g.qs.length-1;
+  const isType=q.mode==='type';
+  const NOTE={keyword:'キーワードが入っていたので、正解にしました。',
+              partial:'答えの一部が書けていたので、正解にしました。',
+              similar:'書き方は少しちがいますが、正解にしました。'};
+  const alts=(q.k||[]).filter(x=>norm(x)!==norm(q.a)).slice(0,4);
   const box=document.createElement('div');
   box.className='judge '+(ok?'ok':'ng');
   box.innerHTML=`
     <div class="jt">${ok?`⭕ せいかい！ <span style="font-size:16px">+${gain} XP</span>`:'❌ ざんねん…'}</div>
-    ${ok?'':`<div class="ans">正解は <span>${esc(q.a)}</span></div>`}
-    ${(!ok&&q.mode==='type'&&input)?`<div class="exp" style="color:var(--ink2);font-size:14px">きみのこたえ：${esc(input)}</div>`:''}
+    ${(isType&&input)?`<div class="exp" style="color:var(--ink2);font-size:14px;margin-top:8px">きみのこたえ：<b style="color:var(--ink)">${esc(input)}</b></div>`:''}
+    ${(ok&&isType&&NOTE[kind])?`<div class="exp" style="font-size:14px;color:#2f9e2f;font-weight:800;margin-top:6px">${NOTE[kind]}</div>`:''}
+    <div class="ans">${ok?(isType&&kind!=='exact'?'正しくは ':'こたえは '):'正解は '}<span>${esc(q.a)}</span></div>
+    ${(isType&&alts.length)?`<div class="exp" style="font-size:13px;color:var(--ink2);margin-top:4px">この書き方でも正解になります：${alts.map(esc).join(' ／ ')}</div>`:''}
     <div class="exp">${esc(q.e)}</div>
-    <div class="tips"><b>💡 もっと知りたい人へ</b>${esc(q.t)}</div>
+    <div class="tips"><b>💡 もっとくわしく</b>${esc(q.t)}</div>
     <button class="btn ${ok?'teal':'blue'}" id="nx">${last?'結果を見る 🏁':'つぎの問題へ →'}</button>`;
   app.querySelector('.card').appendChild(box);
   const nx=document.getElementById('nx');
