@@ -230,7 +230,7 @@ const STAGES=["","石化、そして目覚め","司との決別","石神村へ",
 const SICON=["","🗿","⚔️","🏘️","💊","📱","🔥","⛵","🏝️","🌽","🚀","🏁"];
 
 let user={xp:0,plays:0,best:0,totalCorrect:0,totalQ:0};
-let cfg={play:"random",count:10,scount:20,lv:1,mode:"mix"};
+let cfg={play:"random",count:10,scount:22,lv:1,slv:0,mode:"mix"};
 let game=null;
 const app=document.getElementById('app');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -272,11 +272,18 @@ function start(){
   ${cfg.play==='story'?`
   <div class="card">
     <h2><span class="ic">📖</span>ストーリーモード</h2>
-    <p class="hint">マンガの1巻から順に、<b>物語の流れにそって</b>出題します。全11章から同じ問数ずつ出るので、1回で物語をひととおりたどれます。むずかしさは全部まぜて出ます。</p>
+    <p class="hint">マンガの1巻から順に、<b>物語の流れにそって</b>出題します。全11章から同じ問数ずつ出るので、1回で物語をひととおりたどれます。</p>
     <div class="opts" id="o-scount">
       ${[11,22,33].map(n=>`<div class="opt ${cfg.scount===n?'on':''}" data-v="${n}">${n}問<span class="sub">各章から${n/11}問<br>${n===11?'ダイジェスト':n===22?'ちょうどいい':'じっくり読みかえす'}</span></div>`).join('')}
     </div>
-    <div style="margin-top:14px;font-size:13px;line-height:2;color:var(--ink2);font-weight:700">
+    <h2 style="margin:20px 0 10px;font-size:17px"><span class="ic">🔥</span>むずかしさ</h2>
+    <div class="opts" id="o-slv">
+      <div class="opt ${cfg.slv===0?'on':''}" data-v="0">🌈 ぜんぶ<span class="sub">まぜて出す</span></div>
+      ${[1,2,3].map(l=>`<div class="opt lv${l} ${cfg.slv===l?'on':''}" data-v="${l}">
+        <span class="stars">${STARS[l]}</span> ${LVNAME[l]}</div>`).join('')}
+    </div>
+    <p class="hint" style="margin:10px 0 0">その章にえらんだむずかしさの問題が足りないときは、近いむずかしさの問題でおぎないます。</p>
+    <div style="margin-top:16px;font-size:13px;line-height:2;color:var(--ink2);font-weight:700">
       ${STAGES.slice(1).map((s,i)=>`${SICON[i+1]} 第${i+1}章 ${esc(s)}`).join('　→　')}
     </div>
   </div>`:`
@@ -312,6 +319,7 @@ function start(){
   bindOpts('o-play',v=>{cfg.play=v;start();});
   bindOpts('o-count',v=>cfg.count=+v);
   bindOpts('o-scount',v=>cfg.scount=+v);
+  bindOpts('o-slv',v=>cfg.slv=+v);
   bindOpts('o-lv',v=>cfg.lv=+v);
   bindOpts('o-mode',v=>cfg.mode=v);
 }
@@ -344,9 +352,14 @@ function pickRandom(n){
 function pickStory(n){
   const stages=[1,2,3,4,5,6,7,8,9,10,11];
   const pools=stages.map(s=>{
-    let p=BANK.filter(x=>x.s===s);
-    if(cfg.mode==='type') p=p.filter(x=>!x.m);
-    return shuffle(p);
+    let all=BANK.filter(x=>x.s===s);
+    if(cfg.mode==='type') all=all.filter(x=>!x.m);
+    if(!cfg.slv) return shuffle(all);
+    const main=shuffle(all.filter(x=>x.l===cfg.slv));
+    // その章に選んだむずかしさが足りないときは、近いむずかしさで補う
+    const sub=shuffle(all.filter(x=>x.l!==cfg.slv))
+      .sort((a,b)=>Math.abs(a.l-cfg.slv)-Math.abs(b.l-cfg.slv));
+    return main.concat(sub);
   });
   const total=pools.reduce((a,p)=>a+p.length,0);
   // 各章から同じ問数ずつ（11問なら1問、22問なら2問、33問なら3問）
@@ -383,7 +396,7 @@ function render(){
     <div class="qhead">
       <span>第 ${g.i+1} 問 / ${g.qs.length}問</span>
       <span>
-        ${g.story?`<span class="chip o">${SICON[q.s]} 第${q.s}章</span>`:`<span class="chip ${LVCHIP[q.l]}">${STARS[q.l]} ${LVNAME[q.l]}</span>`}
+        ${g.story?`<span class="chip o">${SICON[q.s]} 第${q.s}章</span> `:''}<span class="chip ${LVCHIP[q.l]}">${STARS[q.l]}${g.story?'':' '+LVNAME[q.l]}</span>
         <span class="chip b" style="margin-left:6px">${q.mode==='choice'?'4択':'記述'}</span>
       </span>
       <span>⚡ ${g.xp} XP${g.streak>=2?` ・ 🔥${g.streak}連続`:''}</span>
@@ -532,7 +545,7 @@ function finish(){
   if(rate>=80) burst(true,true);
 
   app.innerHTML=`
-  <div class="head"><div class="logo" style="font-size:24px">けっか はっぴょう<small>${g.story?'ストーリーモード':LVNAME[cfg.lv]}・${g.qs.length}問</small></div></div>
+  <div class="head"><div class="logo" style="font-size:24px">けっか はっぴょう<small>${g.story?'ストーリー・'+(cfg.slv?LVNAME[cfg.slv]:'ぜんぶ'):LVNAME[cfg.lv]}・${g.qs.length}問</small></div></div>
   <div class="card">
     <div class="big">${g.correct}<small> / ${g.qs.length} 問正解</small></div>
     <div class="msg">${esc(msg)}</div>
