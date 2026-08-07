@@ -272,9 +272,9 @@ function start(){
   ${cfg.play==='story'?`
   <div class="card">
     <h2><span class="ic">📖</span>ストーリーモード</h2>
-    <p class="hint">マンガの1巻から順に、<b>物語の流れにそって</b>出題します。全11章をひととおりたどるコースです。むずかしさは全部まぜて出ます。</p>
+    <p class="hint">マンガの1巻から順に、<b>物語の流れにそって</b>出題します。全11章から同じ問数ずつ出るので、1回で物語をひととおりたどれます。むずかしさは全部まぜて出ます。</p>
     <div class="opts" id="o-scount">
-      ${[15,20,27].map(n=>`<div class="opt ${cfg.scount===n?'on':''}" data-v="${n}">${n}問<span class="sub">${n===15?'ダイジェスト':n===20?'ちょうどいい':'じっくり読みかえす'}</span></div>`).join('')}
+      ${[11,22,33].map(n=>`<div class="opt ${cfg.scount===n?'on':''}" data-v="${n}">${n}問<span class="sub">各章から${n/11}問<br>${n===11?'ダイジェスト':n===22?'ちょうどいい':'じっくり読みかえす'}</span></div>`).join('')}
     </div>
     <div style="margin-top:14px;font-size:13px;line-height:2;color:var(--ink2);font-weight:700">
       ${STAGES.slice(1).map((s,i)=>`${SICON[i+1]} 第${i+1}章 ${esc(s)}`).join('　→　')}
@@ -349,9 +349,10 @@ function pickStory(n){
     return shuffle(p);
   });
   const total=pools.reduce((a,p)=>a+p.length,0);
-  // まず各章1問ずつ、残りは章の問題数に応じて配分
-  const want=pools.map(p=>Math.min(1,p.length));
-  let rest=n-want.reduce((a,b)=>a+b,0);
+  // 各章から同じ問数ずつ（11問なら1問、22問なら2問、33問なら3問）
+  const even=Math.floor(n/pools.length);
+  const want=pools.map(p=>Math.min(even,p.length));
+  let rest=n-want.reduce((a,b)=>a+b,0);   // 章の在庫が足りない分は、多い章から補う
   const share=pools.map(p=>p.length/total);
   while(rest>0){
     let bi=-1,bv=-1;
